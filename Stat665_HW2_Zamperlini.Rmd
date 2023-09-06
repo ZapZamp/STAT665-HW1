@@ -1,0 +1,113 @@
+---
+title: "Stat665 HW2"
+author: "Michelle Zamperlini"
+date: "2023-09-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(XNomial)
+```
+
+## Problem 1
+
+Based on the chi-square approximation of the likelihood ratio test (LRT) statistic, \(G^2\), we derive the approximate 95% confidence interval for the "Congenital Heterochromia Iridum" class activity. To do so, we search for the values of \(\pi_0\) such that \(-2(L_0-L_1)<\chi_{0.05}^2(1)\), which can be solved for by the following equation where \(n = 1000\), \(x = 3\), and \(\hat{\pi} = \frac{x}{n}\). \[2(xlog(\frac{\hat{\pi}}{\pi_0})+(n-x)log\frac{1-\hat{\pi}}{1-\pi_0})=3.84\]
+
+The r code generates our approximate 95% confidence interval as:
+```{r prob1, echo=TRUE}
+x = 3
+n = 1000
+pi_hat = x/n
+
+g2 <- function (pi_0, n, x) {
+  2 * ((x * log((x/n)/pi_0)) + ((n-x) * log((1-(x/n))/(1-pi_0))))
+}
+
+g2_diff <- function (pi_0, alpha = 0.05) {
+  g2(pi_0, n, x) - qchisq(1 - alpha, 1)
+}
+
+# Find the lower endpoint of the CI (i.e., the root left to the MLE)
+score_ci_lower <- uniroot(g2_diff, 
+                          interval = c(0, pi_hat))
+
+# Find the upper endpoint of the CI (i.e., the root right to the MLE)
+score_ci_upper <- uniroot(g2_diff, 
+                          interval = c(pi_hat, 1))
+
+c(score_ci_lower$root, score_ci_upper$root)
+```
+
+## Problem 2
+
+# (a) Compute p-values for the Pearson test statistic
+
+In class we computed p-values for the likelihood ratio test based on the approximate large-sample distribution, Monte Carlo simulations, and the exact value. We now repeat those steps for the Pearson test statistic where \(n=20\), \(K=6\), and the null hypothesis being tested is \(H_0: \pi_k=\frac{1}{6}\) for all k = 1, 2,...,6.
+
+\[X^2 = \sum_{k=1}^{6} \frac{n_k-n\pi_{0k}}{n\pi_{0k}}\]
+
+With the r code, we calculate:
+a) the approximate p-value based on the large-sample distribution (\(p=0.0476\)),
+b) the approximate p-value based on a Monte Carlo simulation with 100,000 samples (\(p=0.0492\)),
+c) and the exact p-value using the XNomial library (\(p=0.0479\)).
+
+Based on the Pearson test at \(\alpha=.05\), we reject the null hypothesis. The large-sample approximation for the p-value was slightly more accurate than the Monte Carlo approximation, coming closer to the exact p-value.
+
+```{r aprob2, echo=TRUE}
+n <- 20 
+K <- 6
+pi_0 <- rep(1 / K, K)
+R <- 100000
+n_obs <- c(1,1,4,6,1,7)
+set.seed(123)
+
+pear_obs <- sum(((n_obs - (n * pi_0))^2)/(n * pi_0), na.rm = TRUE)
+pchisq(pear_obs, K - 1, lower.tail = FALSE)
+
+n_sim <- rmultinom(R, n, pi_0)
+pear_sim <- colSums(((n_sim - (n * pi_0))^2)/(n * pi_0), na.rm = TRUE)
+mean(pear_sim >= pear_obs)
+
+xmulti(n_obs, pi_0, detail = 0)$pChi
+```
+
+# (b) Estimate the nominal significance level
+
+For \(n=20\) and \(K=6\), we conduct a simulation study with 1,000 replications to estimate the actual significance level if the nominal significance level is 90%.
+
+The significance level is the probability of rejecting the null hypothesis when it is in fact true. Performing our simulation based on the null, we calculate how often the tests reported a p-value, \(p <.1 \).
+
+```{r bprob2, echo = TRUE}
+n <- 20  # number of trials (i.e., the sample size)
+K <- 6   # number of possible outcomes for each trial
+pi_0 <- rep(1 / K, K)  # cell probabilities under H_0
+R <- 100000  # number of MC simulations to approximate the p-value
+n_obs <- c(1,1,4,6,1,7)
+set.seed(123)
+
+pvals <- replicate(1000, {
+  # Randomly draw from the null distribution, this are the
+  # simulated "observed" cell counts:
+  n_obs <- rmultinom(1, n, pi_0)
+  
+  # Compute the observed test statistics and approximate the p-values.
+  g2_obs <- 2 * sum(n_obs * log(n_obs / (n * pi_0)), na.rm = TRUE)
+  pear_obs <- sum(((n_obs - (n * pi_0))^2)/(n * pi_0), na.rm = TRUE)
+  
+  # Draw the MC sample once and use for both tests!
+  n_sim <- rmultinom(R, n, pi_0)
+  
+  g2_sim <- 2 * colSums(n_sim * log(n_sim / (n * pi_0)), na.rm = TRUE)
+  pear_sim <- colSums(((n_sim - (n * pi_0))^2)/(n * pi_0), na.rm = TRUE)
+  
+  # Create a vector of the p-values from the different approximations
+  c(g2_chi = pchisq(g2_obs, K - 1, lower.tail = FALSE), # p-value from the LRT using the large-sample approximation
+    g2_mc = mean(g2_sim >= g2_obs),  # p-value from the LRT using the MC approximation
+    x2_chi = pchisq(pear_obs, K - 1, lower.tail = FALSE), # p-value from the Pearson test using the large-sample approximation
+    x2_mc = mean(pear_sim >= pear_obs))  # p-value from the Pearson test using the MC approximation
+})
+rowSums(pvals <.1)/1000
+```
+
+As we can see above, the Likelihood ratio test (LRT) using large sample approximation performed the most poorly of our tests, having the type I error rate furthest from our nominal significance level of 90%. The Pearson test statistic performed better overall than the LRT test statistic did, the chi-squared large sample approximation had an actual significance level only .02 greater than the nominal significance. I would recommend the Pearson test statistic in this scenario, and although it is slightly further from the nominal signifiance value, I would prefer the Monte Carlo approximation of Pearson as it's slightly conservative.
